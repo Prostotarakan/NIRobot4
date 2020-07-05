@@ -1,0 +1,867 @@
+// New version of our code (it's name in txt is all_code_var3, last code's name is all_code_var2, Changed it at 11'th of October, Kate)
+/*****************************************************
+NIRobot_4
+YTC.B-71 :)
+
+Chip type           : ATmega1281
+Program type        : Application
+Clock frequency     : 14,740000 MHz
+Memory model        : Small
+External SRAM size  : 0
+Data Stack size     : 2048       
+
+functions:     
+char getchar1(void) and  void putchar1(char c) - are for USART1, created bu this program    
+void putnumber( int count) - put big integers (decimal!)
+
+interrupt [TIM5_COMPA] void timer5_compa_isr(void) - left wheel's PWM change to stabilize when it move forvard ('w')
+ 
+void rotate(char c) - turn left('l') or right('r')   //make america great again and this code so
+
+
+//Main part
+void main(void)
+letters and commands:   
+ f                              f1
+'w' :  // Move forward!         w   //flag for interrupt Timer5
+'s' :  // Move back!            w (s)
+'d' :  // Move left!            d
+'a' :  // Move right!           a
+'f' :  // Move stop!            f
+
+'z' :  // Move fast!            
+'x' :  // Move slow!            
+ 
+'u' :  // Move forward-left     f
+'i' :  // Move forward-right    f
+'o' :  // Move back-left        f
+'p' :  // Move back-right       f
+
+'q' :  // Info about rotate
+
+'l' :  // Turn left, 90         f
+'r' :  // Turn right, 90        f
+*****************************************************/
+
+#include <mega1281.h>
+#include <stdio.h> 
+#include <stdlib.h>
+#include <string.h>
+
+
+#define RXB8 1
+#define TXB8 0
+#define UPE 2
+#define OVR 3
+#define FE 4
+#define UDRE 5
+#define RXC 7
+
+#define FRAMING_ERROR (1<<FE)
+#define PARITY_ERROR (1<<UPE)
+#define DATA_OVERRUN (1<<OVR)
+#define DATA_REGISTER_EMPTY (1<<UDRE)
+#define RX_COMPLETE (1<<RXC)
+
+//
+ 
+// Get a character from the USART1 Receiver
+#pragma used+ 
+char getchar1(void)
+{
+char status,data;
+while (1)
+      {
+      while (((status=UCSR1A) & RX_COMPLETE)==0);
+      data=UDR1;
+      if ((status & (FRAMING_ERROR | PARITY_ERROR | DATA_OVERRUN))==0)
+         return data;
+      };
+}
+#pragma used-
+
+// Write a character to the USART1 Transmitter
+#pragma used+
+void putchar1(char c)
+{
+while ((UCSR1A & DATA_REGISTER_EMPTY)==0);
+UDR1=c;
+}
+#pragma used-
+
+//
+
+// Declare your global variables here 
+char f,f1;//,*str;  //command and flag
+int count1,count3,i; // impulse counters  
+int PWML,PWMR; //PWM main parameters
+int C_PWML, C_PWMR, C_PWM=50; //PWM add parameters
+///we should understand what size of C_PWM is good. 10 is too slow for normal forvard. 50 is norm  
+//float time=0.1, vr=0.0, vl=0.0; 
+
+//
+
+//Timer 5 interrupt  //Left wheel's PWM change to stabilize
+// Timer 5 output compare A interrupt service routine
+interrupt [TIM5_COMPA] void timer5_compa_isr(void)
+{
+// Place your code here
+ #asm("sei")
+// Place your code here
+count1 = TCNT1L;//low part of left wheel impulse
+count3 = TCNT3L; //low part of right wheel impulse
+   
+TCNT3L=0x00;TCNT1L=0x00; //clear low impulse counters
+
+//stabilize when move forvard
+if ( f1 == 'w') {
+if ( (count3-count1) >= 1 ){ //right is faster
+    PWML=PWML+1;//++; // rise left PWM
+    //input information
+    //putchar1('r');   
+    //putchar1((count3-count1)+'0');
+}    
+else if ( (count1-count3) >= 1 ) { //left is faster
+    PWML=PWML-1;//--; // low left PWM
+    //input information   
+    //putchar1('l');
+    //putchar1((count1-count3)+'0');
+}  
+OCR0A=PWML; // left PWM 
+}
+
+
+} //end of Timer 5 interrupt
+
+
+//
+
+//input string from integer
+void putnumber( int count)
+{   
+    char *str; 
+    itoa(count,str);        
+    for (i=0;i<=strlen(str);i++)
+    {
+        putchar1(str[i]);       
+    }  
+}
+
+//
+
+// turn left or right
+void rotate(char c)
+{       
+        int c0,c1,c2,c3,counter_l,counter_h; 
+        int angle_H=0x15, angle_L=0x7C;   // 0x157C = 5500 impulses = 1 full wheel rotation   //0x0ABE = 2750 = 1/2 full wheel rotation
+        //stop mashine
+        PORTC.0 = 0;
+        PORTC.1 = 0;
+      
+        PORTC.2 = 0;
+        PORTC.3 = 0;  
+        OCR0A=PWML;  //normal speed
+        OCR2A=PWMR;
+        f1='f'; 
+        TCNT3H=0x00;TCNT1H=0x00; //clear impulse counters high
+        TCNT3L=0x00;TCNT1L=0x00; //clear impulse counters low
+            
+        /*putnumber(TCNT3H);
+        putnumber(TCNT3L); */
+        if (c=='r')   //turn right        left pwm work
+        {  
+                c0=1; 
+                c1=0;
+                c2=0;
+                c3=0;
+        } 
+        else //(c=='l') turn left    right pwm work
+        {  
+                c0=0;  
+                c1=0;
+                c2=0;
+                c3=1;
+        }
+        counter_h=0;
+        counter_l=0;
+        while ((counter_h<(angle_H))||(counter_l<angle_L))
+        {
+                if (c=='r')   //turn right 
+                { 
+                        counter_l=TCNT1L;   //counters for left wheel
+                        counter_h=TCNT1H;
+                }
+                else //(c=='l') turn left    
+                { 
+                        counter_l=TCNT3L;   //counters for right wheel
+                        counter_h=TCNT3H;
+                }
+                       
+                PORTC.0 = c0;
+                PORTC.1 = c1;
+                PORTC.2 = c2;
+                PORTC.3 = c3;  
+                
+                if  ((counter_h>(angle_H))&&(counter_l>angle_L))  
+                {
+                break;
+                }
+        }
+        
+        //stop mashine
+        PORTC.0 = 0;
+        PORTC.1 = 0;
+      
+        PORTC.2 = 0;
+        PORTC.3 = 0;
+        f1='f';
+        
+        putnumber(TCNT1H);   // real  left  angle_H_angle_L 
+        putnumber(TCNT1L);          
+        putchar1('_');  
+        putnumber(TCNT3H);   // real  right angle_H_angle_L
+        putnumber(TCNT3L);
+        putchar1('_');   
+        
+        //antierror
+        //work about it
+        if (c=='r')   //turn right   left pwm work
+        {  
+                c0=0; 
+                c1=0;
+                c2=1;
+                c3=0;
+                angle_L=TCNT3L;
+                angle_H=TCNT3H;
+        } 
+        else //(c=='l') turn left    right pwm work
+        {  
+                c0=0;  
+                c1=1;
+                c2=0;
+                c3=0;
+                angle_L=TCNT1L;
+                angle_H=TCNT1H;
+        }
+        TCNT3H=0x00;TCNT1H=0x00; //clear impulse counters high
+        TCNT3L=0x00;TCNT1L=0x00; //clear impulse counters low
+        counter_h=0;
+        counter_l=0;
+        while ((counter_h<(angle_H))||(counter_l<angle_L))
+        {
+                if (c=='l')   //toturn right 
+                { 
+                        counter_l=TCNT1L;   //counters for left wheel
+                        counter_h=TCNT1H;
+                }
+                else //(c=='r') toturn left    
+                { 
+                        counter_l=TCNT3L;   //counters for right wheel
+                        counter_h=TCNT3H;
+                }    
+                
+                PORTC.0 = c0;
+                PORTC.1 = c1;
+                PORTC.2 = c2;
+                PORTC.3 = c3;  
+                
+                if  ((counter_h>(angle_H))&&(counter_l>angle_L))  
+                {
+                break;
+                }
+        }
+        
+        //stop mashine
+        PORTC.0 = 0;
+        PORTC.1 = 0;
+      
+        PORTC.2 = 0;
+        PORTC.3 = 0;
+        f1='f';  
+        /*putnumber(counter_h-TC);       // good   angle_H_angle_L      
+        putnumber(counter_l); */
+        /*putchar1('_');
+        putnumber(TCNT1H);
+        putnumber(TCNT1L);         // real   angle_H_angle_L  
+        putchar1('_');  
+        putnumber(TCNT3H);
+        putnumber(TCNT3L);
+        putchar1('_');  */ 
+        /*itoa(counter_h-TC,str);        
+        for (i=0;i<=strlen(str);i++){
+                putchar1(str[i]);       
+        } 
+        itoa(counter_l,str);     
+        for (i=0;i<=strlen(str);i++){
+                putchar1(str[i]);       
+        }  
+        putchar1('_');   
+        itoa(angle_H-TC,str);          //sravnivaem
+        for (i=0;i<=strlen(str);i++){
+                putchar1(str[i]);       
+        } 
+        itoa(angle_L,str);     
+        for (i=0;i<=strlen(str);i++){
+                putchar1(str[i]);       
+        }  
+        putchar1('_');  */   
+        
+        
+} 
+
+
+//
+
+//Main part
+void main(void)
+{
+// Declare your local variables here
+
+
+// Crystal Oscillator division factor: 1
+#pragma optsize-
+CLKPR=0x80;
+CLKPR=0x00;
+#ifdef _OPTIMIZE_SIZE_
+#pragma optsize+
+#endif
+
+// Input/Output Ports initialization
+// Port A initialization
+// Func7=In Func6=In Func5=In Func4=In Func3=In Func2=In Func1=In Func0=In 
+// State7=T State6=T State5=T State4=T State3=T State2=T State1=T State0=T 
+PORTA=0x00;
+DDRA=0x00;
+
+// Port B initialization
+// Func7=Out Func6=In Func5=In Func4=Out Func3=In Func2=In Func1=In Func0=In 
+// State7=0 State6=T State5=T State4=0 State3=T State2=T State1=T State0=T 
+PORTB=0x00;
+DDRB=0x90;
+
+// Port C initialization
+// Func7=In Func6=In Func5=In Func4=In Func3=Out Func2=Out Func1=Out Func0=Out 
+// State7=T State6=T State5=T State4=T State3=0 State2=0 State1=0 State0=0 
+PORTC=0x00;
+DDRC=0x0F;
+
+// Port D initialization
+// Func7=In Func6=In Func5=Out Func4=In Func3=In Func2=In Func1=In Func0=In 
+// State7=T State6=T State5=0 State4=T State3=T State2=T State1=T State0=T 
+PORTD=0x00;
+DDRD=0x20;
+
+// Port E initialization
+// Func7=In Func6=In Func5=In Func4=In Func3=In Func2=In Func1=Out Func0=In 
+// State7=T State6=T State5=T State4=T State3=T State2=T State1=0 State0=T 
+PORTE=0x00;
+DDRE=0x02;
+
+// Port F initialization
+// Func7=In Func6=In Func5=In Func4=In Func3=In Func2=In Func1=In Func0=In 
+// State7=T State6=T State5=T State4=T State3=T State2=T State1=T State0=T 
+PORTF=0x00;
+DDRF=0x00;
+
+// Port G initialization
+// Func5=In Func4=In Func3=In Func2=In Func1=In Func0=In 
+// State5=T State4=T State3=T State2=T State1=T State0=T 
+PORTG=0x00;
+DDRG=0x00;
+
+
+// Timer 0
+// Left wheel's PWM
+// Timer/Counter 0 initialization
+// Clock source: System Clock
+// Clock value: 230,313 kHz
+// Mode: Fast PWM top=FFh
+// OC0A output: Non-Inverted PWM
+// OC0B output: Disconnected
+TCCR0A=0x83;
+TCCR0B=0x03;
+TCNT0=0x00;
+OCR0A=0x4F;
+OCR0B=0x00;
+
+// Timer 2
+// Right wheel's PWM
+// Timer/Counter 2 initialization
+// Clock source: System Clock
+// Clock value: 230,313 kHz
+// Mode: Fast PWM top=FFh
+// OC2A output: Non-Inverted PWM
+// OC2B output: Disconnected
+ASSR=0x00;
+TCCR2A=0x83;
+TCCR2B=0x03;
+TCNT2=0x00;
+OCR2A=0x4F;
+OCR2B=0x00;
+
+// Timer 1
+// Left wheel's impulse counter
+// Timer/Counter 1 initialization
+// Clock source: T1 pin Falling Edge
+// Mode: Normal top=FFFFh
+// Noise Canceler: Off
+// Input Capture on Falling Edge
+// OC3A output: Discon.
+// OC3B output: Discon.
+// OC3C output: Discon.
+// Timer 1 Overflow Interrupt: Off
+// Input Capture Interrupt: Off
+// Compare A Match Interrupt: Off
+// Compare B Match Interrupt: Off
+// Compare C Match Interrupt: Off
+TCCR1A=0x00;
+TCCR1B=0x06;
+TCNT1H=0x00;
+TCNT1L=0x00;
+ICR1H=0x00;
+ICR1L=0x00;
+OCR1AH=0x00;
+OCR1AL=0x00;
+OCR1BH=0x00;
+OCR1BL=0x00;
+OCR1CH=0x00;
+OCR1CL=0x00;
+
+// Timer 3
+// Right wheel's impulse counter
+// Timer/Counter 3 initialization
+// Clock source: T3 pin Falling Edge
+// Mode: Normal top=FFFFh
+// Noise Canceler: Off
+// Input Capture on Falling Edge
+// OC3A output: Discon.
+// OC3B output: Discon.
+// OC3C output: Discon.
+// Timer 3 Overflow Interrupt: Off
+// Input Capture Interrupt: Off
+// Compare A Match Interrupt: Off
+// Compare B Match Interrupt: Off
+// Compare C Match Interrupt: Off
+TCCR3A=0x00;
+TCCR3B=0x06;
+TCNT3H=0x00;
+TCNT3L=0x00;
+ICR3H=0x00;
+ICR3L=0x00;
+OCR3AH=0x00;
+OCR3AL=0x00;
+OCR3BH=0x00;
+OCR3BL=0x00;
+OCR3CH=0x00;
+OCR3CL=0x00;
+
+// Timer 5
+// Time counter for Timer 1 and 3
+// Timer/Counter 5 initialization
+// Clock source: System Clock
+// Clock value: 14,395 kHz
+// Mode: CTC top=OCR5A
+// OC5A output: Discon.
+// OC5B output: Discon.
+// OC5C output: Discon.
+// Noise Canceler: Off
+// Input Capture on Falling Edge
+// Timer 5 Overflow Interrupt: Off
+// Input Capture Interrupt: Off
+// Compare A Match Interrupt: On
+// Compare B Match Interrupt: Off
+// Compare C Match Interrupt: Off
+TCCR5A=0x00;
+TCCR5B=0x0D;
+TCNT5H=0x00;
+TCNT5L=0x00;
+ICR5H=0x00;
+ICR5L=0x00;
+OCR5AH=0x05;  //59F - 1439 Hz  -> time=0.1c - time for interrupt
+OCR5AL=0x9F;
+OCR5BH=0x00;
+OCR5BL=0x00;
+OCR5CH=0x00;
+OCR5CL=0x00;
+
+
+// Timer 4
+// no used
+// Timer/Counter 4 initialization
+// Clock source: System Clock
+// Clock value: Timer 4 Stopped
+// Mode: Normal top=FFFFh
+// OC4A output: Discon.
+// OC4B output: Discon.
+// OC4C output: Discon.
+// Noise Canceler: Off
+// Input Capture on Falling Edge
+// Timer 4 Overflow Interrupt: Off
+// Input Capture Interrupt: Off
+// Compare A Match Interrupt: Off
+// Compare B Match Interrupt: Off
+// Compare C Match Interrupt: Off
+TCCR4A=0x00;
+TCCR4B=0x00;
+TCNT4H=0x00;
+TCNT4L=0x00;
+ICR4H=0x00;
+ICR4L=0x00;
+OCR4AH=0x00;
+OCR4AL=0x00;
+OCR4BH=0x00;
+OCR4BL=0x00;
+OCR4CH=0x00;
+OCR4CL=0x00;
+
+
+// External Interrupt(s) initialization
+// INT0: Off
+// INT1: Off
+// INT2: Off
+// INT3: Off
+// INT4: Off
+// INT5: Off
+// INT6: Off
+// INT7: Off
+EICRA=0x00;
+EICRB=0x00;
+EIMSK=0x00;
+
+// PCINT0 interrupt: Off
+// PCINT1 interrupt: Off
+// PCINT2 interrupt: Off
+// PCINT3 interrupt: Off
+// PCINT4 interrupt: Off
+// PCINT5 interrupt: Off
+// PCINT6 interrupt: Off
+// PCINT7 interrupt: Off
+// PCINT8 interrupt: Off
+// PCINT9 interrupt: Off
+// PCINT10 interrupt: Off
+// PCINT11 interrupt: Off
+// PCINT12 interrupt: Off
+// PCINT13 interrupt: Off
+// PCINT14 interrupt: Off
+// PCINT15 interrupt: Off
+// PCINT16 interrupt: Off
+// PCINT17 interrupt: Off
+// PCINT18 interrupt: Off
+// PCINT19 interrupt: Off
+// PCINT20 interrupt: Off
+// PCINT21 interrupt: Off
+// PCINT22 interrupt: Off
+// PCINT23 interrupt: Off
+PCMSK0=0x00;
+PCMSK1=0x00;
+PCMSK2=0x00;
+PCICR=0x00;
+
+// Timer/Counter 0 Interrupt(s) initialization
+TIMSK0=0x00;
+// Timer/Counter 1 Interrupt(s) initialization
+TIMSK1=0x00;
+// Timer/Counter 2 Interrupt(s) initialization
+TIMSK2=0x00;
+// Timer/Counter 3 Interrupt(s) initialization
+TIMSK3=0x00;
+// Timer/Counter 4 Interrupt(s) initialization
+TIMSK4=0x00;
+// Timer/Counter 5 Interrupt(s) initialization
+TIMSK5=0x02;
+
+
+// USART1 initialization
+// Communication Parameters: 8 Data, 1 Stop, No Parity
+// USART1 Receiver: On
+// USART1 Transmitter: On
+// USART1 Mode: Asynchronous
+// USART1 Baud Rate: 9600 /// why did we change it? It was 57600 and 0F
+UCSR1A=0x00;
+UCSR1B=0x18;
+UCSR1C=0x06;
+UBRR1H=0x00;
+UBRR1L=0x5F;    // 0F - 57600 //5F - 9600
+
+
+// Analog Comparator initialization
+// Analog Comparator: Off
+// Analog Comparator Input Capture by Timer/Counter 1: Off
+ACSR=0x80;
+ADCSRB=0x00;
+
+#asm("sei")
+count1=0;
+count3=0;
+PWML=OCR0A;
+PWMR=OCR2A;
+C_PWML=0;
+C_PWMR=0;
+//PWML,PWMR - PWM main parameters
+//C_PWML, C_PWMR - PWM add parameters
+// Realy main part 
+while (1)
+      {
+      PORTB.7 = 1;//left wheel start
+      PORTB.4 = 1;//right wheel start
+
+      //direction regulation
+      f=getchar1(); //read the command
+
+      switch (f) { 
+        case 'w' :  // Move forward!
+          //Start Timer5
+          TCCR5B=0x0D;  //Timer5 parameters 
+          OCR5AH=0x05;  
+          OCR5AL=0x9F;  
+          TIMSK5=0x02;  //Timer5 interrupt 
+          
+          PORTC.0 = 1;
+          PORTC.1 = 0;
+      
+          PORTC.2 = 0;
+          PORTC.3 = 1; 
+          
+          C_PWML=0;
+          C_PWMR=0; 
+          
+          f1='w';
+          break;
+
+        case 's' :  // Move back!
+          //Start Timer5
+          TCCR5B=0x0D;  //Timer5 parameters 
+          OCR5AH=0x05;  
+          OCR5AL=0x9F;  
+          TIMSK5=0x02;  //Timer5 interrupt 
+           
+          PORTC.0 = 0;
+          PORTC.1 = 1;
+      
+          PORTC.2 = 1;
+          PORTC.3 = 0;
+                    
+          C_PWML=0;
+          C_PWMR=0; 
+             
+          f1='w';    //try
+          break;
+
+        case 'd' :  // Move left!
+          //Stop Timer5
+          TCCR5B=0x00;  //Timer5 parameters 
+          OCR5AH=0x00;  
+          OCR5AL=0x00;  
+          TIMSK5=0x00;  //Timer5 interrupt  
+          
+          PORTC.0 = 1;
+          PORTC.1 = 0;
+      
+          PORTC.2 = 1;
+          PORTC.3 = 0;
+                    
+          C_PWML=0;
+          C_PWMR=0;   
+             
+          f1='d'; 
+          break;
+
+        case 'a' :  // Move right!
+          //Stop Timer5
+          TCCR5B=0x00;  //Timer5 parameters 
+          OCR5AH=0x00;  
+          OCR5AL=0x00;  
+          TIMSK5=0x00;  //Timer5 interrupt  
+          
+          PORTC.0 = 0;
+          PORTC.1 = 1;
+      
+          PORTC.2 = 0;
+          PORTC.3 = 1;  
+                    
+          C_PWML=0;
+          C_PWMR=0;   
+             
+          f1='a';
+          break;
+
+        case 'f' :  // Move stop!
+          //Stop Timer5
+          TCCR5B=0x00;  //Timer5 parameters 
+          OCR5AH=0x00;  
+          OCR5AL=0x00;  
+          TIMSK5=0x00;  //Timer5 interrupt  
+           
+          PORTC.0 = 0;
+          PORTC.1 = 0;
+      
+          PORTC.2 = 0;
+          PORTC.3 = 0; 
+                    
+          C_PWML=0;
+          C_PWMR=0;   
+             
+          f1='f'; 
+          break;
+
+        case 'z' :  // Move fast!
+          PWML++; 
+          PWMR++;
+          break;
+
+        case 'x' :  // Move slow! 
+          PWML--;  
+          PWMR--; 
+          break;
+        
+        case 'u' :  // Move forward-left 
+          //Stop Timer5
+          TCCR5B=0x00;  //Timer5 parameters 
+          OCR5AH=0x00;  
+          OCR5AL=0x00;  
+          TIMSK5=0x00;  //Timer5 interrupt
+          
+          C_PWML=0;
+          C_PWMR=C_PWM; 
+          
+          PORTC.0 = 1;
+          PORTC.1 = 0;
+      
+          PORTC.2 = 0;
+          PORTC.3 = 1;  
+            
+             
+          f1='f'; 
+          break; 
+          
+        case 'i' :  // Move forward-right 
+          //Stop Timer5
+          TCCR5B=0x00;  //Timer5 parameters 
+          OCR5AH=0x00;  
+          OCR5AL=0x00;  
+          TIMSK5=0x00;  //Timer5 interrupt   
+          
+          C_PWML=C_PWM;
+          C_PWMR=0; 
+          
+          PORTC.0 = 1;
+          PORTC.1 = 0;
+      
+          PORTC.2 = 0;
+          PORTC.3 = 1;   
+             
+          f1='f';
+          break;  
+          
+        case 'o' :  // Move back-left
+          //Stop Timer5
+          TCCR5B=0x00;  //Timer5 parameters 
+          OCR5AH=0x00;  
+          OCR5AL=0x00;  
+          TIMSK5=0x00;  //Timer5 interrupt 
+          
+          C_PWML=0;
+          C_PWMR=C_PWM; 
+          
+          PORTC.0 = 0;
+          PORTC.1 = 1;
+      
+          PORTC.2 = 1;
+          PORTC.3 = 0;   
+             
+          f1='f';
+          break; 
+          
+        case 'p' :  // Move back-right 
+          //Stop Timer5
+          TCCR5B=0x00;  //Timer5 parameters 
+          OCR5AH=0x00;  
+          OCR5AL=0x00;  
+          TIMSK5=0x00;  //Timer5 interrupt 
+          
+          C_PWML=C_PWM;
+          C_PWMR=0; 
+          
+          PORTC.0 = 0;
+          PORTC.1 = 1;
+      
+          PORTC.2 = 1;
+          PORTC.3 = 0;   
+             
+          f1='f';
+          break;  
+          
+        case 'q' :  // Info about rotate
+          putchar1('l');
+          putnumber(TCNT1L);
+          putnumber(TCNT1H);
+          putchar1('_');
+          putchar1('r');
+          putnumber(TCNT3L);
+          putnumber(TCNT3H);
+          putchar1('_'); 
+          putchar1('_'); 
+          /*itoa(TCNT1H,str);     
+          for (i=0;i<=strlen(str);i++){
+           putchar1(str[i]);       
+          }
+          itoa(TCNT1L,str);     
+          for (i=0;i<=strlen(str);i++){
+           putchar1(str[i]);       
+          }
+          putchar1(' '); 
+          putchar1(' ');*/
+          break;
+          
+        case 'l' :  // Turn left, 90
+          //Stop Timer5
+          TCCR5B=0x00;  //Timer5 parameters 
+          OCR5AH=0x00;  
+          OCR5AL=0x00;  
+          TIMSK5=0x00;  //Timer5 interrupt 
+          
+          rotate('l'); 
+          C_PWML=0;
+          C_PWMR=0; 
+   
+          f1='f';
+          break;
+        
+        
+        case 'r' :  // Turn right, 90
+          //Stop Timer5
+          TCCR5B=0x00;  //Timer5 parameters 
+          OCR5AH=0x00;  
+          OCR5AL=0x00;  
+          TIMSK5=0x00;  //Timer5 interrupt 
+          
+          rotate('r');
+          C_PWML=0;
+          C_PWMR=0; 
+
+          f1='f';
+          break;  
+          
+        default:
+          break;
+      } //and of switch
+
+      OCR0A=PWML+C_PWML;   // left PWM
+      OCR2A=PWMR+C_PWMR;   // right PWM
+      } //end of main while
+} //end of main main
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
